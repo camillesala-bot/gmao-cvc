@@ -87,7 +87,10 @@ if menu == "📱 Espace Technicien":
                         language="fr"
                     ).text
                     
-                    # 2. Rédaction du rapport avec fallback automatique sur les modèles Groq disponibles
+                    # 2. Récupération dynamique des modèles texte disponibles sur Groq
+                    all_models = groq_client.models.list()
+                    text_models = [m.id for m in all_models.data if "whisper" not in m.id]
+                    
                     prompt = f"""
                     Tu es un assistant d'exploitation CVC.
                     Transforme la dictée vocale suivante en un rapport structuré :
@@ -99,18 +102,11 @@ if menu == "📱 Espace Technicien":
                     - **Recommandations**
                     """
                     
-                    models_to_try = [
-                        "llama-3.1-8b-instant",
-                        "llama3-8b-8192",
-                        "mixtral-8x7b-32768",
-                        "gemma2-9b-it",
-                        "llama-3.3-70b-versatile"
-                    ]
-                    
                     response = None
                     last_error = None
                     
-                    for m in models_to_try:
+                    # Test successif des modèles actuellement actifs sur l'API Groq
+                    for m in text_models:
                         try:
                             response = groq_client.chat.completions.create(
                                 messages=[{"role": "user", "content": prompt}],
@@ -126,7 +122,7 @@ if menu == "📱 Espace Technicien":
                         st.session_state.transcription = transcription
                         st.session_state.rapport_ia = response.choices[0].message.content
                     else:
-                        st.error(f"Impossible d'interroger le modèle texte Groq : {last_error}")
+                        st.error(f"Impossible d'interroger Groq : {last_error}")
 
                 except Exception as e:
                     st.error(f"Erreur lors du traitement de l'audio : {e}")
@@ -228,3 +224,4 @@ elif menu == "🖥️ Espace Responsable":
                 "description_initiale": description
             }).execute()
             st.success("Ordre de travail créé et disponible sur l application du technicien !")
+                    
