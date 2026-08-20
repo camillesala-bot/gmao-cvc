@@ -1,5 +1,4 @@
 import os
-import io
 import streamlit as st
 from supabase import create_client, Client
 from groq import Groq
@@ -36,6 +35,11 @@ if menu == "📱 Espace Technicien":
     st.title("📱 Espace Technicien")
 
     techs_data = supabase.table("techniciens").select("id, nom, prenom").execute().data
+
+    if not techs_data:
+        st.warning("⚠️ Aucun technicien trouvé dans Supabase. Veuillez exécuter le script SQL dans Supabase pour insérer les données de test.")
+        st.stop()
+
     tech_options = {f"{t['prenom']} {t['nom']}": t['id'] for t in techs_data}
     selected_tech = st.selectbox("👤 Technicien connecté :", list(tech_options.keys()))
     tech_id = tech_options[selected_tech]
@@ -137,30 +141,32 @@ elif menu == "🏢 Fiches Bâtiments":
     st.title("🏢 Fiches Bâtiments")
 
     batiments_data = supabase.table("batiments").select("*").execute().data
-    bat_options = {b['nom']: b for b in batiments_data}
-    selected_bat_nom = st.selectbox("Sélectionner un bâtiment :", list(bat_options.keys()))
-    bat = bat_options[selected_bat_nom]
-
-    st.markdown(f"**📍 Adresse :** {bat['adresse']}")
-    st.markdown(f"**👤 Contact sur place :** {bat['contact_nom']} ({bat['contact_telephone']})")
-    st.info(f"**🔑 Accès :** {bat['notes_acces']}")
-
-    st.subheader("📜 5 Dernières interventions réalisées")
-    # Requête de l'historique récent
-    historique = supabase.table("ordres_travail") \
-        .select("code_ot, titre_anomalie, rapport_ia_structure, date_fin, equipements!inner(locaux_techniques!inner(batiment_id))") \
-        .eq("equipements.locaux_techniques.batiment_id", bat["id"]) \
-        .eq("statut", "TERMINE") \
-        .order("date_fin", desc=True) \
-        .limit(5) \
-        .execute().data
-
-    if not historique:
-        st.write("Aucun historique disponible pour ce bâtiment.")
+    if not batiments_data:
+        st.info("Aucun bâtiment enregistré.")
     else:
-        for h in historique:
-            with st.expander(f"🛠️ {h['code_ot']} — {h['titre_anomalie']}"):
-                st.write(h['rapport_ia_structure'])
+        bat_options = {b['nom']: b for b in batiments_data}
+        selected_bat_nom = st.selectbox("Sélectionner un bâtiment :", list(bat_options.keys()))
+        bat = bat_options[selected_bat_nom]
+
+        st.markdown(f"**📍 Adresse :** {bat['adresse']}")
+        st.markdown(f"**👤 Contact sur place :** {bat['contact_nom']} ({bat['contact_telephone']})")
+        st.info(f"**🔑 Accès :** {bat['notes_acces']}")
+
+        st.subheader("📜 5 Dernières interventions réalisées")
+        historique = supabase.table("ordres_travail") \
+            .select("code_ot, titre_anomalie, rapport_ia_structure, date_fin, equipements!inner(locaux_techniques!inner(batiment_id))") \
+            .eq("equipements.locaux_techniques.batiment_id", bat["id"]) \
+            .eq("statut", "TERMINE") \
+            .order("date_fin", desc=True) \
+            .limit(5) \
+            .execute().data
+
+        if not historique:
+            st.write("Aucun historique disponible pour ce bâtiment.")
+        else:
+            for h in historique:
+                with st.expander(f"🛠️ {h['code_ot']} — {h['titre_anomalie']}"):
+                    st.write(h['rapport_ia_structure'])
 
 # -----------------------------------------------------------------------------
 # 3. ESPACE RESPONSABLE
@@ -170,27 +176,30 @@ elif menu == "🖥️ Espace Responsable":
     st.subheader("➕ Créer un Ordre de Travail")
 
     eq_data = supabase.table("equipements").select("id, nom, code_equipement, locaux_techniques(batiments(nom))").execute().data
-    eq_options = {f"{e['locaux_techniques']['batiments']['nom']} - {e['nom']} ({e['code_equipement']})": e['id'] for e in eq_data}
-    selected_eq = st.selectbox("Équipement concerné :", list(eq_options.keys()))
+    if not eq_data:
+        st.warning("Aucun équipement disponible.")
+    else:
+        eq_options = {f"{e['locaux_techniques']['batiments']['nom']} - {e['nom']} ({e['code_equipement']})": e['id'] for e in eq_data}
+        selected_eq = st.selectbox("Équipement concerné :", list(eq_options.keys()))
 
-    techs_data = supabase.table("techniciens").select("id, nom, prenom").execute().data
-    tech_options = {f"{t['prenom']} {t['nom']}": t['id'] for t in techs_data}
-    selected_tech = st.selectbox("Attribuer au technicien :", list(tech_options.keys()))
+        techs_data = supabase.table("techniciens").select("id, nom, prenom").execute().data
+        tech_options = {f"{t['prenom']} {t['nom']}": t['id'] for t in techs_data}
+        selected_tech = st.selectbox("Attribuer au technicien :", list(tech_options.keys()))
 
-    code_ot = st.text_input("Code OT (ex: OT-2026-003)", value="OT-2026-003")
-    priorite = st.selectbox("Priorité :", ["P1_URGENT", "P2_HAUTE", "P3_NORMALE"])
-    titre = st.text_input("Titre de l anomalie :", value="Bruit anormal sur régulation")
-    description = st.text_area("Description :", value="Signalé par le gardien ce matin.")
+        code_ot = st.text_input("Code OT (ex: OT-2026-003)", value="OT-2026-003")
+        priorite = st.selectbox("Priorité :", ["P1_URGENT", "P2_HAUTE", "P3_NORMALE"])
+        titre = st.text_input("Titre de l anomalie :", value="Bruit anormal sur régulation")
+        description = st.text_area("Description :", value="Signalé par le gardien ce matin.")
 
-    if st.button("🚀 Créer et attribuer l OT", type="primary"):
-        supabase.table("ordres_travail").insert({
-            "code_ot": code_ot,
-            "equipement_id": eq_options[selected_eq],
-            "technicien_id": tech_options[selected_tech],
-            "priorite": priorite,
-            "statut": "ASSIGNE",
-            "titre_anomalie": titre,
-            "description_initiale": description
-        }).execute()
-        st.success("Ordre de travail créé et disponible sur l application du technicien !")
-        
+        if st.button("🚀 Créer et attribuer l OT", type="primary"):
+            supabase.table("ordres_travail").insert({
+                "code_ot": code_ot,
+                "equipement_id": eq_options[selected_eq],
+                "technicien_id": tech_options[selected_tech],
+                "priorite": priorite,
+                "statut": "ASSIGNE",
+                "titre_anomalie": titre,
+                "description_initiale": description
+            }).execute()
+            st.success("Ordre de travail créé et disponible sur l application du technicien !")
+                
