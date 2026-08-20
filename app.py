@@ -3,7 +3,7 @@ import streamlit as st
 from supabase import create_client, Client
 from groq import Groq
 
-# Configuration de la page
+# Configuration de la page Streamlit
 st.set_page_config(page_title="GMAO CVC Communale", page_icon="🔧", layout="centered")
 
 # Initialisation des connexions via secrets Streamlit
@@ -76,35 +76,60 @@ if menu == "📱 Espace Technicien":
             st.session_state.rapport_ia = ""
 
         if audio_file and st.button("🚀 Structurer le rapport via IA", type="secondary"):
-            with st.spinner("Analyse par Whisper & Llama 3.1..."):
-                audio_bytes = audio_file.read()
-                
-                # Transcription Whisper via Groq
-                transcription = groq_client.audio.transcriptions.create(
-                    file=("dictation.wav", audio_bytes),
-                    model="whisper-large-v3",
-                    language="fr"
-                ).text
-                
-                # Rédaction du rapport via Llama 3.1
-                prompt = f"""
-                Tu es un assistant d'exploitation CVC.
-                Transforme la dictée vocale suivante en un rapport structuré :
-                "{transcription}"
-                
-                Format attendu (Markdown) :
-                - **Diagnostic / Constat**
-                - **Actions effectuées**
-                - **Recommandations**
-                """
-                response = groq_client.chat.completions.create(
-                    messages=[{"role": "user", "content": prompt}],
-                    model="llama-3.3-70b-versatile"
-           
-                )
-                
-                st.session_state.transcription = transcription
-                st.session_state.rapport_ia = response.choices[0].message.content
+            with st.spinner("Analyse par Whisper & Modèle IA..."):
+                try:
+                    audio_bytes = audio_file.read()
+                    
+                    # 1. Transcription Whisper via Groq
+                    transcription = groq_client.audio.transcriptions.create(
+                        file=("dictation.wav", audio_bytes),
+                        model="whisper-large-v3",
+                        language="fr"
+                    ).text
+                    
+                    # 2. Rédaction du rapport avec fallback automatique sur les modèles Groq disponibles
+                    prompt = f"""
+                    Tu es un assistant d'exploitation CVC.
+                    Transforme la dictée vocale suivante en un rapport structuré :
+                    "{transcription}"
+                    
+                    Format attendu (Markdown) :
+                    - **Diagnostic / Constat**
+                    - **Actions effectuées**
+                    - **Recommandations**
+                    """
+                    
+                    models_to_try = [
+                        "llama-3.1-8b-instant",
+                        "llama3-8b-8192",
+                        "mixtral-8x7b-32768",
+                        "gemma2-9b-it",
+                        "llama-3.3-70b-versatile"
+                    ]
+                    
+                    response = None
+                    last_error = None
+                    
+                    for m in models_to_try:
+                        try:
+                            response = groq_client.chat.completions.create(
+                                messages=[{"role": "user", "content": prompt}],
+                                model=m
+                            )
+                            if response and response.choices:
+                                break
+                        except Exception as err:
+                            last_error = err
+                            continue
+                    
+                    if response and response.choices:
+                        st.session_state.transcription = transcription
+                        st.session_state.rapport_ia = response.choices[0].message.content
+                    else:
+                        st.error(f"Impossible d'interroger le modèle texte Groq : {last_error}")
+
+                except Exception as e:
+                    st.error(f"Erreur lors du traitement de l'audio : {e}")
 
         if st.session_state.rapport_ia:
             st.markdown(st.session_state.rapport_ia)
@@ -203,4 +228,3 @@ elif menu == "🖥️ Espace Responsable":
                 "description_initiale": description
             }).execute()
             st.success("Ordre de travail créé et disponible sur l application du technicien !")
-                
